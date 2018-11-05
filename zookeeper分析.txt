@@ -1,0 +1,781 @@
+zookeeper：
+	一个高性能，分布式的，开源分布式应用协调服务；基于tcp协议
+	
+	ls path【watch】：
+		path表示指定数据节点的节点路径
+		列出指定节点下的所有子节点
+		只能查看第一级的所有子节点
+		刚安装时ls/下只有默认的zookeeper的保留节点
+		Watch表示监听payh的子节点的变化
+	create【-s】【-e】 path data acl：
+		创建zookeeper节点
+		-s或者-e表示创建的是顺序或临时节点，不加默认创建的是持久节点
+		Path为节点的全路径，没有相对节点的表示方式
+		data为当前节点内存储的数据
+		Acl用来进行权限控制，缺省情况下不做任何权限控制
+
+	get path【watch】：
+		获取指定节点的数据内容和属性信息
+		Path表示指定数据节点的节点路径
+	
+	set path data【version】：
+		更新指定节点的数据内容
+		path表示被更新的节点路径
+		data为更新的数据
+		Version为指定被更新的数据版本，一般不指定，如果数据版本已经被更新，则指定旧版本时会报错
+	deleate path【version】：
+		删除指定节点
+		path表示被删除的节点
+		version为指定被删除的数据版本，一般不指定，如果数据版本已经更新，则指定旧版本时会报错
+	
+	数据节点【znode】：
+		不是机器的意思
+		Zk树形结构中的数据节点，用于存储数据
+		持久节点：一单创建，除非主动调用删除操作，否则一直保存
+		临时节点：与客户端回话绑定，一旦客户端回话失效，这个客户端的临时节点都会被移除
+		PRESISTENT_SEQUENTIAL:创建子节点时，如果设置属性SEQUENTIAL，则会自动在节点面 追一个整型数,限是整形的最大值 
+	
+	watcher：
+		组成：
+			客户端
+			客户端watchManager
+			Zk服务器
+		机制：
+			客户端向zk服务器注册watcher的同时，会将watcher对象存储在客户端的watchManager
+			zk服务器出发watcher事件后，会向客户端发送通知，客户端线程从watchManager中调起watcher执行
+		
+		Watcher接口：
+			public class ZLock implements Watcher
+			public void process(WatcjedEvent event)
+		Watcher事件：
+			通知状态：org.apache.zookeeper.Watcher.Event.KeeperState
+			通知类型：org.apache.zookeeper.Watcher.Event.EventType
+
+
+		NodeDataChanged事件：
+			无论节点数据繁盛变化还是数据版本发生变化都会出发
+			及时被更新数据与新数据一样，数据版本都会发生变化
+		NodeChildrenChanged：
+			新增节点或者删除节点
+		AuthFailed：
+			重点不是客户端回话没有权限而是授权失败
+		
+		客户端只能收到相关事件通知，但是并不能获取到对象非数据节点的变化内容以及变更后的数据；
+		
+		创建zk客户端对象实例时注册：
+			Zookeeper(String connectString，int sessionTimeout，Watcher watcher)
+			Zookeeper(String connectString，int sessionTimeout，Watcher watcher，boolean canBeReadOnly)
+			Zookeeper(String connectString，int sessionTimeout，Watcher watcher，long sessionId, byte[] sessionPasswd)
+			ZooKeeper(String connectString, int sessionTimeout, Watcher watcher, long sessionId, byte[] sessionPasswd, boolean canBeReadOnly) 
+			
+			通过种方式注的watcher将会作整个zk会话期间的默认watcher，
+			会一直被 保在客户端ZKWatchManager的defaultWatcher中，
+			如果有其他的设置，则个 watcher会被覆盖 
+
+		Watcher设置后，一单出发一次即会失效，如果需要一直监听，就需要在注册；
+		
+		
+		ServerCnxn类及cnxn对象：
+			Zk客户端与服务器只拿的tcp连接
+			实现了watcher接口
+			总结：即包含了连接信息又包含watcher信息
+		watchmanger:
+			zk服务器端Watcher管理者
+			从2个维度维护watcher【使用的是hashMap来实现】
+				watchTable：从数据节点的粒度来维护
+				watch2Paths从watcher的粒度来维护
+			负责watcher事件的触发		
+			
+		客户端回调watcher步骤：
+			反序列化将字节流转换成WatcherEvent对象
+			处理chrootPath
+			还原watchedEvent：把WatcherEvent对象转换成WatchedEvent
+			回调Watcher：把WatchedEvent对象交给EventThread线程
+		
+		EventThread：
+			从客户端的ZKWatchManager中取出Watcher，并放入waitingEvent队列中；
+
+		acl组成：
+			Scheme：id：permission 比如：world：anyone：crdwa
+			Scheme：验证过程中使用的检验策略
+			id:权限被赋予的对象，比如ip或者某个用户
+			permission为权限，上面的crdwa，表示五个权限组合
+			通过setAcl命令设置节点的权限
+			节点的acl不具有集成关系
+			getAcl可以查看节点的Acl信息
+		
+	java客户端：
+		创建回话：
+			客户端与服务端会话的建立是一个异步的过程我那个，即
+				完成哭护短的初始化后就返回，此时连接并没有真正的简历起来
+				当连接真正的建立起来后，客户端会受到一个事件通知
+		创建节点：
+			String：
+				create(String path，byte[] data，List<Acl> acl，CreateMode createMode)，以同步的方式创建节点
+			void：
+				create(String path，byte[] data，List<Acl> acl，CreateMode createMode，AsyncCallback.StringCallback cb，Object ctx)，以异步方式创建节点
+			无论是上面的同步或者异步都不支持地柜创建节点
+			当节点存在时，抛出异常NodeExistsException
+	
+			参数说明：
+				path：被创建的节点路径
+				data[]:节点中的数据
+				acl：Acl策略
+				createmode:节点类型，枚举类型，有四种选择：
+					持久，持久顺序，临时，临时顺序
+				cb：异步回调函数，需要实现接口StringCallback接口；当服务器端创建完成后，客户端会自动调用这个对象的方法processResult
+				ctx：用于传递一个对象，可以在回调方法执行的时候用，通常用于传递业务的上下文信息
+		删除节点：
+			void：
+				delete(String path,int version),以同步的方式删除节点
+			void：
+				delete（String path，int version，AsyncCallback.VoidCallback cb，Object ctx）
+				以异步的方式删除节点，如果写测试代码，客户端主线程不能退出，否则可能请求没有发到服务器或者异步回调不成功
+			path：被删除的节点的路径
+			version：知道节点的数据版本，如果指定的版本不是最新版本，将会报错，他的作用类似于hibernate中的乐观锁
+			cb：异步回调函数
+			ctx：传递上下文信息，即操作之前的信息传递到删除之后的异步回调函数里面
+		
+		获取子节点：
+			List<String> getChildren(String path，boolean watch)
+				返回path节点的子节点列表
+			Void getChildren(String path，boolean watch，AsyncCallback.Children2Callback cb，Object ctx)
+				以异步的方式返回子节点，返回path指定节点的状态信息(stat)
+			void getChildren(String path，boolean watch，AsyncCallback.ChildrenCallback cb，Object ctx)
+				以异步的方式返回子节点，不返回path节点的状态信息(stat)
+			List<String> getChildren(String path，boolean watch，Stat stat)
+				返回stat和子节点
+			
+			path：数据节点的路径，比如：/zk-book/foo,获取该路径下的子节点列表
+			watcher：设置watcher后，如果path对应节点的子节点数量发生变化，将会得到通知，允许为null
+			watch：是否使用默认的watcher
+			stat：指定数据节点的状态信息
+			cb：异步回调函数
+			ctx：用于传递一个对象，可以在回调方法执行的时候调用，通常用于传递业务的上下文信息
+		
+		获取节点数据：
+			void：
+				getData（String path，boolean watch，AsyncCallback.DataCallback cb，Object ctx）
+			byte[]:
+				getData（String path，boolean watch，Stat stat）
+			void：
+				getData（String path，Watcher watcher，AsyncCallback。DataCallBack cb，Object ctx）
+			byte[]:
+				getData（String path，Watcher watcher，Stat stat）
+			
+			path：数据节点的路径，比如：/zk-book/foo，获取该路径节点的数据
+			watcher：设置watcher后，如果path对应节点的数据繁盛变化，将会得到通知，允许为null
+			watch：是否使用默认的watcher
+			stat：指定数据节点的状态信息
+			cb：异步回调函数
+			ctx：用于传递一个对象，可以在回电方法执行的时候用，通常用于传递业务的上下文信息
+
+		修改数据：
+			Stat：
+				setData（String path，byte[] data，int version）
+			void：
+				setData（String path，byte[] data，int version，AsyncCallback。StatCallback cb，Object ctx）
+			
+			path：被修改的节点的路径
+			data：新的数据
+			version：知道节点的数据版本，如果指定的版本不是最新版本，将会报错，他的作用类似于hibernate中额乐观锁
+			cb：异步回调函数
+			ctx：传递上下文信息，即操作之前的信息传递到删除之后的异步回调函数里面
+
+		检查节点是否存在：
+			Stat：
+				exists（String path，boolean watch），如果节点不存在返回null
+			void：
+				exists（String path，boolean watch，AsyncCallback.StatCallback cb，Object ctx）
+			Stat：
+				exists（String path，Watcher watcher）
+			void：
+				exists（String path，Watcher watcher，AsyncCallBack.StatCallback cb，Object ctx）
+			
+			path：数据节点的路径，比如：/zk-book/foo，即API调用的目的是检测该节点的是否存在
+			watcher：注册的watcher，用于监听一下三个事件：节点被创建，节点被删除，节点被更新
+			watch：是否使用默认的watcher
+			cb：异步回调函数
+			ctx：用于传递一个对象，可以在回调方法执行时候用，通常用于传递业务的上下文信息
+		
+		
+zk集群：
+	
+	是一种对等集群，所有节点(机器)数据都一样
+	集群节点之间靠心跳感知彼此的存在
+	所有写操作都在主节点，其他节点只能读，虽然可以接收写请求，但是内部会把写操作转给主节点
+	通过选举机制选出主节点，从而保障了主节点的高可用
+	至少3个节点，必须是奇数个节点，
+	当一半以上的节点数据写入成功后，则返回写入成功，是最终一致性策略
+	
+	CAP解读：
+		一致性（Consistency）：
+			分布式环境下，一致性主要是指数据在多个副本间是否保持一致；
+		可用性（Availability）：
+			是指系统提供的服务必须一直处于可用的状态，对于用户的请求总是能够在有限的时间内返回结果，有限的时间强调的是用户能接受的时间
+			
+			可用性与常说的高可用性不是一个概念，如果服务访问不到，不属于没有可用性
+		分区容忍性（Partition tolerance）：
+			集群出现网络割裂时，集群还能继续提供一定的可用性和一致性，除非整个网络不可用
+		
+		只能满足其中的2项不是另外一项就完全没有，而是要求没有那么严格
+		分区容忍是分布式系统必有的特性，因为网络不可靠，所以只能在v和a中进行权衡；
+
+	集群配置zoo.cfg：
+
+		创建dataDir，创建myid：和机器序号一样
+
+		机器节点：
+			server.1=ip1:2888:3888
+			其中1是机器序号，与myid文件的数字一致，范围为1-255
+			2888是follower服务器和leader之间进行运行时通信和数据同步的端口
+			3888是选举过程中的投票通信端口
+			
+		initLimit：
+			用于leader等待follower启动和数据同步完成后的时间
+			他不是具体的时间，ticktimexinitLimit才是真正的时间
+			默认值是10，如果ticktime为2000ms，则默认等待的时候是20s
+			当zk节点数据较多时，可以适当调大，一般默认配置即可
+		synclimit：
+			用于follower和leader之间的心跳检测的最大延迟时间，超过这个时间表示follower已经脱离了leader的
+			他不是具体的时间，ticktimexsynclimit才是真正的具体时间
+			默认值是5
+			一般不用修改
+		
+		
+		
+zk开源客户端：
+	
+	zkClient：
+		解决session回话超时重连
+		watcher反复注册
+		简化开发api
+	
+	curatur：
+		创建回话：
+			使用VuratorFrameWorkfactory工厂的2个静态方法创建客户端：
+				static CuratorFrameWork newClient（String connectString，int sessionTimeoutMs，int connectionTimeoutMs，RetryPolicy retryPolicy）
+				static CuratorFrameWork newClient（String connecString，RetryPolicy retryPolicy）
+			start方法启动
+			
+			connectString：
+				逗号分开的IP：port
+			retryPolicy：
+				重试策略，默认四种：Exponential BackffRetry，RetryNTimes，RetryOneTime，RetryuntilElapsed
+			sessionTimeoutMs：
+				会话超时时间，单位为毫秒，默认60000ms
+			connectTimeoutMs：
+				连接创建超时时间，单位为毫秒，默认是15000ms
+			
+		重试策略：
+			实现接口RetryPolicy可以自定义重试策略；
+				boolean allowRetry（int retryCount，long elapsedTimeMs，RetrySleeper sleeper）
+				
+				retryCount：
+					已经重试的次数，如果第一次重试，此值未0
+				elapsedTimeMs：
+					重试话费的时间，单位为毫秒
+				sleeper：
+					类似于Thread.sleep，用于sleep指定时间
+				返回值：
+					如果还会继续重试，则返回true
+			
+			默认重试策略：
+				ExponentialBackoffRetry：
+					ExponentialBackoffRetry（intbaseSleepTimeMs，int maxRetries）
+					ExponentialBackoffRetry（int baseSleepTimeMs，int maxRetries，int masSleepMs）
+					当前应该sleep的时间：baseSleepTimeMS*Math.max（1，random.nextint（1<<（retryCount+1）））
+					
+					baseSleerTimeMs：初始sleep时间
+					maxRetries：最大重试次数
+					maxSleepMs：最大重试时间
+					返回值：如果还会继续重试，则返回true
+				
+				RetryNTimes：
+					RetryNTimes(int n，int sleepMsBetweenRetries)
+					当前应该sleep的时间
+					n:最大重试次数
+					sleepMSBetweenRetries：每次重试的间隔时间
+
+				RetryOneTime：
+					值重试一次
+					RetryOneTime（int sleepMsBetweenRetry），sleepMsBetweenRetry为重试间隔的时间
+
+				RetryuntilElapsed：	
+					RetryuntilElapsed（int masElapsedTimeMs，int sleepMsBetweenRetries）
+					重试的时间超过最大时间后，就不再重试
+					maxElapsedTimeMs：最大重试时间
+					sleepMsBetweenRetries：每次重试的间隔时间
+				
+		设置watcher：
+			NOdeCache：
+				监听数据节点的内容变更
+				监听节点的创建，即如果指定的节点不存在，则节点创建后，会出发这个监听
+			PathChildrenCache：
+				监听指定节点的子节点变化情况
+				包括：新增子节点 子节点数据变更 和子节点删除
+	
+			NodeCache:
+				构造函数：
+					NodeCache（CuratorFrameWork client，String path）
+					NodeCache（CuratorFrameWork client，String path，boolean dataIsCompressed）
+					
+					client：客户端实例
+					path：数据节点路径
+					dataIsCompressed：是否进行数据压缩
+				回调接口：
+					public interface NodeCacheLitener
+						void nodeChanged（）。没有参数，怎么获取事件信息以及节点数据
+					
+
+			PathChileDrenCache	：
+				PathChileDrenCache（CuratorFrameWork client，String path，boolean cachaData）
+				PathChileDrenCache（CuratorFrameWork client，String path，boolean cachaData,boolean dataIsCompress）
+				PathChileDrenCache（CuratorFrameWork client，String path，boolean cachaData,boolean dataIsCompress，ExcutorService excutorService）
+				PathChileDrenCache（CuratorFrameWork client，String path，boolean cachaData,boolean dataIsCompress，ThreadFactory threadFactory）
+				PathChileDrenCache（CuratorFrameWork client，String path，boolean cachaData,ThreadFactory threadFactory）
+				
+				
+				回调接口：
+					interface PathChildrenCacheListener
+						void childEvent（CuratorFrameWork client，PathChildrenCacheEvent event）
+				监听接口：
+					时间类型：
+						新增子节点，子节点数据变更，子节点删除
+				PathChildrenCache.StartMode
+					BUILD_INITIAL_CACHE，同步初始化客户端的cache，及创建cache后，就从服务端拉入对应的数据
+					NORMAL 异步初始化cache
+					POST_INITIALIZED_EVENT，异步初始化，初始化完成出发事件PathChildrenCacheEvent.Type.INITIALIZED
+
+选举及一致性：
+	ZAB协议：
+		Zookeeper Atomic Broadcast 即Zookeeper院子消息广播协议
+		选举过程需要依赖次协议
+		数据写入过程也需要次协议
+		Zab的核心是定义了那些会改变zk服务器数据状态的事务请求的处理方式
+		
+		所有事务请求必须由一个全局唯一的服务器来协调处理，这样的服务器被称为Leader服务器，而余下的其他服务器则成为Follower服务器；
+		Leader服务器负责将一个客户端事务请求转换成那个一个个事务Proposal（提议），并将该Proposal分发给集群中所有的Followe服务器；
+		之后Leader服务器需要等到所有的Follower服务器的反馈，一旦超过半数的Follower服务器进行了正确的反馈后，那么Leader就会再次向所有的Follower服务器发布COmmit消息，要求其将前一个Proposal进行提交
+
+	ZAB协议三阶段：
+		发现 Discovery，即选举Leader过程
+		同步 Synchronization，即选举出来的Leader后，Follower或者Observer从Leader同步最新的数据
+		广播，同步完成后，就可以接受客户端新的事物请求，并进行消息广播，实现数据在集群节点的副本存储
+
+	服务器角色：
+		Leader：
+			事物请求的唯一调度和处理，保证集群事物处理的顺序性
+			集群内部各服务器的调度者
+			
+		Follower：
+			处理客户端非事物请求，转发事物请求给Leader服务器
+			参与事物请求Proposal的投票
+			参与Leader选举投票
+		Observer：
+			处理客户端非事物请求，转发事物请求给Leader服务器
+			不参与任何形式的投票，包括选举和事物的投票
+			次角色的存在通常是为了提供读性能
+	
+
+	服务器状态：
+		LOOKING：
+			寻找Leader状态
+			当服务器处于此状态时，表示当前没有Leader，需要进入选举过程
+		FOLLOWING：
+			跟随者状态，表名当前服务器角色是Follower
+		OBSERVER：
+			观察者状态，表名当前服务器角色为Observer
+		LEADING：
+			领导者状态，表名当前服务器角色为Leader
+
+		org.apache.zooKeeper.server.quorum.ServerState类维护以上四种状态
+
+	
+	集群通信：
+		基于TCP协议：
+			为了避免重复创建2个节点之间的tcp连接，zk按照myid数值方向来建立连接，即小数的节点发起搭的节点连接，比如id为1向id为2的发起tcp连接
+		多端口：
+			配置中第一个端口是通信和数据同步端口，默认是2888
+			第二个端口是投票端口，默认是3888
+
+	选举算法：
+		LeaderElection
+			Udp协议
+		FastLeaderElection
+			Udp，Tcp
+		AuthFastLeaderElection
+			Udp
+		3.4.0版本后，只支持FastLeaderElection的tcp协议版本的选举算法
+
+	影响称为Leader因素：
+		数据新旧程度：
+			只有拥有最新数据的节点才能有机会成为Leader
+			通过事务id（zxid）的大小来表示数据的新旧，越大代表数据越新
+		myid：
+			集群启动时，会在data目录下配置myid文件，里面的数字代表当前zk服务器节点的编号
+			当zk服务器节点数据一样时，myid数字越大就会被选举成为Leader
+			当集群中已经有Leader时，新加入的节点不会影响原来的集群
+		投票数量：
+			只有得到进群中多半的投票，才能成为Leader
+			多半即：n/2+1，其中n为集群中的节点数量
+	
+	zxid的构成：
+		主进程周期：
+			也叫epoch
+			选举的轮次，每多一轮选举，则主进程周期加一
+			Zxid总共64位来表示，其高32位代表主进程周期
+			标胶数据新旧的时候，先比较epoch的大小
+		事务单调递增的计数器：
+			zxid的低32位表示，选举完成后，从0开始
+
+	同步：
+		同步时机：
+			当Leader完成选角后，follower需要与心得leader同步数据
+		
+		同步准备：
+			Leader：
+				leader告诉其他follower当前最新数据是什么即zxid
+					leader构建一个NEWLEADER的包，包括当前最大的zxid，发送给所有的follower或者observer
+				Leader给每个follower创建一个线程LearnerHandle来负责处理每个follower的数据同步请求，同时主线程开始阻塞，只有超过一半的follower同步完成，同步过程菜完成，leader才能成为真正的leader
+				根据同步算法进行操作
+			
+			follower：
+				选举完成后，尝试与leader简历同步连接，如果一段时间没有连接上就报错超时，重新回到选举状态
+				向leader发送FOLLOWERRINFO封包，带上follower自己最大的zxid
+				根据不同同步算法进行操作
+		
+			初始化：
+				minCommittedLog：
+					最小的事务日志id，即zxid（没有被快照存储的日志文件的第一条，每次快照存储玩，户重新生成一个事务人日志文件）
+				maxCommitiedLog：
+					事务日志中最大的事务，即zxid
+			同步算法：
+				直接差异化同步（DIFF同步）
+				仅回滚同步（TRUNC），即删除多余的事务日志，比如原来的主宕机后又重新加入，可能存在他自己要写入提交但是别的节点还没来得及提交
+				先回滚在差异化同步（TRUNC+DIFF同步）
+				全量同步（SNAP同步）
+				同步选举算法
+	
+				场景一：
+					把Follower最后的事务zxid乘坐peerLastZxid
+					当minCommitedLog <peerLastZxid < maxCommittedLog
+				同步方案：
+					直接差异化同步
+					leader会给follower服务器发送DIFF指令，意思是：进入差异化数据同步截断，leader会把proposal同步给follower
+					实际同步过程会先发送数据修改proposal，灾后在发送COMMIT指令数据包
+
+
+				场景二：
+					Leader在提交本地事务完成，还没有把事务的Proposal提交给其他节点前，Leader当机了；
+					
+					假设3节点的集群，分别是ABC，没有宕机前，leader是B，已经发送50001和50002的数据和事务提交proposal，并且发送了50003的数据修改提议，但是在B节点发送事务的proposal之前，B当机了，由于B是本机发送，所以B的本地事务已经提交，即B最新的数据是50003
+			
+					在A和C进行选举后，C成为主，并且进行过2次修改数据，对应的Proposal是60001
+					60002
+	
+					B机器恢复后加入新集群AC，重新进行数据同步，对于与B来说，perLastZxid为50003；对于当前主C来说，mincommittedLog=50001 maxCommittedLog=60002
+
+				
+				场景三：
+					某个节点宕机时间太长，当恢复并且加入集群后，数据的事务日志文件已经产生多个，此时的minCommittedLog比节点宕机时的最大日志还要大；
+					假设B宕机后，几天后菜恢复，此时的minCommittedLog6008731，而peerLastZxid为5000003
+					
+					同步方案：
+						采用全量同步
+						当leader发现，B的zxid小于minCommittedLog时，向B发送SNAP指令
+						B收到指令，进入同步截断
+						Leader会从内存数据库中国区全量的数据发送给B
+						B获取数据处理完成后，C还会吧最新的proposal（全量同步期间产生）通过增量的方式发送给B
+
+	广播流程：
+		集群选举完成后，并且完成数据同步后，即可开始对外服务，接收读写请求
+		当leader接收到客户端最新的事务请求后，会生成对应的事务proposal，并根据zxid的数徐向所有的follower发送提案，即proposal
+		当follower收到leader的事务proposal时，根据接收的先后顺序处理proposal，即如果先后收到1,2,3条，则如果处理完了第三条，则代表1,2俩条一定已经处理成功
+		当Leader收到follower针对某个事务proposal过半的ack后，则发起事务提交，重新发起一个commit的proposal
+		Follower收到commit的peoposal后，记录事务提交，并把数据更新到内存数据库
+		补充说明：
+			由于只有过半的机器给出反馈，则可能存在某时刻某些节点数据不是最新的
+			业务上如果需要确定读取到的数据是最新的，则可以再读取之前，调用sync方法进行数据同步
+
+
+zk深度分析：
+	检查会话失效清除失效会话：
+		
+		分桶策略：
+			把所有的会话按照时间维度进行分类管理，即同一个时间点失效的会话都在一起管理，即上面的属性
+			ConcurrentHashMap<Long.Integer> sessionsWithTimeout
+		
+		会话失效时间计算：
+			约定：
+				吧所有的时间按照某个单位哦进行等份（默认为服务器的ticktime配置）切割，此单位称呼为ExpirationINterval
+			公式：
+				某次超时时间=（（currentTime+sessiontimeout）/ExpirationInterval+1）XExporationInterval
+		
+		当某个会话由于有操作而导致超时时间变化，则会把会话从上一个桶移动到下一个通
+	
+	会话激活：
+		当此会话一直有操作，则会话就不会有失效
+		影响会话超时时间的因素
+			心跳检测，PING命令
+				当客户端发现在sessionTimeout/3时间范围内还没有任何操作产生，机会发送一个PING命令
+			正常业务操作，比如get和set
+		每次业务操作或者心跳检测，都会重新计算超时时间，然后在桶之间移动会话
+
+	会话超时检测：
+		由sessionTracker中的一个线程负责检查session是否失效
+		线程检查周期也是ExpirationINterval的倍数
+		当某次检查时，如果此次的粪桶（即前面的ExpirationInteraval）之前还有会话，就说明这些会话都超时了，因为会话如果有业务操作或者靠心跳，会不断的从较小的桶迁移到较大的分桶
+		
+		举例：
+			系统启动时间是100001，此时ExpirationInterval=2000ms，则桶的刻度为100001/2000 = 50 下一次的检查时间为（100001/2000+1）x2000 = 102000
+	
+	
+	会话清理流程：
+		修改会话状态close
+			由于清理过程需要一定时间，为了避免清理期间会话状态出现变化
+		向所有的集群节点发起会话关闭请求
+		收集跟被清理的会话相关的临时节点
+		向集群节点发出删除临时节点的事务请求
+		集群中的所有节点追星删除临时节点事务
+		从sessionTracker的列表中移除会话
+		关闭会话的网络连接，具体类是NIOServerCnxnFactory
+		
+	会话重连：
+		当客户端与服务器端的网络断开后，客户端会不断的重新连接，当连接上后会话的状态是一下2种情况：
+			CONNECTED ，服务器端会话依然存在
+			EXPIREd，即服务器端的会话已经被关闭清除了
+			网络断开不代表会话超时
+		三个会话异常：
+			CONNECTION_LOSS
+			SESSION_EXPIRED
+			SESSION_MOVED
+		
+		CONNECTION_LOSS：
+			网络闪断或者是客户端服务器出现问题导致
+			出现此问题，客户端会重新查找地址进行连接，知道连接上
+			当做某个操作过程（比如setData）中出现了CONNECTION_loss现象，则客户端会接收到None-Disconnect通知（设置了默认watcher情况下），同时会抛出异常org.apache.zooKeeper.KeeperException$ConnectionLossException
+			
+		当重新连接上后，客户端会收到时间通知（None-SyncConnected），在设置了默认watcher时
+	
+		SESSION_EXPIRED：
+			通常发生在CONNECTION_LOSS期间，因为没有网络连接，就不能有操作和心跳进行，会话就会超时
+			由于重新连接时间较长，导致服务器端关闭了会话，并清除会话，此时会话相关联的watcher邓数据都会丢失，watcher失效
+			出现这种情况，客户端需要重新创建zookeeper对象，并且恢复数据(比如注册watcher)
+			会收到异常SessionExpiredException
+		
+		SESSION_MOVED：
+			出现CONNECTION_LOSS时，客户端尝试重新连接下个节点（connectstring）
+			例如：
+				客户端刚开始连接的是s1，由于网络中断，客户端尝试连接s2，连接成功后，s2延续了会话，即会话从s1迁移到s2
+			当出现以下业务场景时，服务器会抛出SessionMovedException异常，由于客户端的连接已经发生了变化（从s1--->s2）所以，客户端收不到异常
+				有三台服务器s1，s2，上
+				开始时，客户端连接s1，此时客户端发出一个修改数据的请求r1
+				在修改数据的请求到达s1之前，客户端重新连接上了s2服务器，此时出现了会话转义
+				连接s2之后，客户端又发起一次修改请求r2
+				r1倍s1服务器处理，r2倍s2处理（比r1倍处理要早）
+				这样对客户端来说，请求倍处理2次，并且r2倍r1的处理结果覆盖
+				服务器通过检查会话的所有者来判断此次会话请求是否合法，不合法就会抛出moved异常
+		
+	数据与存储：
+		ZKDatabase
+			protected DataTree
+		
+		DataTree：
+			private final ConcurrentHashMap<String,DataNode> nodes = new ConcurrentHashMap<String,DataNode>()'
+		
+		DataNode:
+			byte data[]
+			DataNode parent
+			private Set<String> children
+		
+		ZKDatabase：
+			负责管理zk的所有会话 datatree存储和事务日志
+			会定时间向磁盘快照内存数据
+			当节点启动后，会通过磁盘上的事务日志和快照文件恢复完成的内存数据
+		DataTree：
+			整个zk的数据就靠DataTree维护，包括数据，目录，权限
+			数据的领域模型，不包括对外的连接
+		DataNode：
+			树形结构中的每个节点
+			引用到父节点
+			也引用到节点列表
+		
+		日志文件：
+			存储于datalog或者datalogDir配置的目录
+			对应目录下的version-2代表的是日志格式版本号
+			日志文件命名
+				文件大小都是64m
+				后缀都是16进制格式数字，逐渐增大，其本质是本日志文件的第一条zxid
+		日志格式：
+			Zk提供了工具类org.apache.zookeeper.server.LogFormatter解析日志的内容
+			第一一行是日志格式信息
+				
+		日志写入：
+			Zk类通过org.apache.zookeeper.server.persistence.FileTxnlog实现对事务日志的管理
+				通过append方法来添加事务日志
+		
+		写入过程：
+			确定是否有事务日志文件可写，当第一次创建事务日志文件或者上一个事务日志文件写满后都会关闭这个文件流
+			确定事务日志是否需要扩容，当文件剩余空间不足4kb时，把文件新增64Mb（新增一个日志文件）用0填充空余的空间
+			事务序列化
+			生成Checksum
+			写入事务日志文件流
+			事务日志刷入磁盘，本质是调用系统的fysnc接口
+		
+		数据快照：
+			Zk某个时刻的完整数据
+			快照文件的后缀为服务器最新的zxid
+			通过工具类SnapshotFormatter可以查看快照文件的内容
+		
+		快照流程：
+			确定是否需要进行数据快照
+				snapCount默认为100000，表示达到这个数量的事务日志才开始进行快照
+				为了避免集群节点同时进行快照，快照按如下工时出发快照
+					logcount > (snapCount/2+randRoll),randRoll是为1 --- snapCount/2主键的随机数
+			切换事务日志文件
+				创建新的事务日志文件
+			创建数据快照异步线程
+			获取全量数据和会话信息
+			生成快照数据文件
+			把数据刷入快照文件
+		
+		
+
+配置管理：
+	
+
+
+
+分布式锁：
+	排他锁：
+		只能允许一个线程获得，其他线程都需要等待已经获取的线程的锁
+	Zk实现：
+		获得锁，用过构建一个目录，当叶子节点能创建成功，则认为取到锁，因为在此创建这个节点时，将会抛出异常
+		
+		释放锁，删除节点或者会话实现
+
+	共享锁：
+		读锁，如果前面线程使用的是读锁，则后面的线程还可以获取读锁，从而可以读取数据
+		写锁，如果现在打算获取锁从而进行操作时，无论前面已经有读锁或者写锁，都不能在写
+		
+		Zk实现：
+			获得读锁，利用zk节点的顺序性，对于读操作，节点名称带一个R表示，如果获得是R标识，则说明前面价额都是读锁，还可以继续过去读锁；否则，等待锁释放后
+			获得写锁，只有自己创建的节点序列最小，才能获得读锁，否则，进入等待，知道有锁资源被释放，然后再判断是否有机会得到锁
+
+			释放锁，删除节点或者会话失效
+			
+
+
+
+
+
+
+
+
+
+
+		
+		
+		
+
+
+
+
+
+
+
+
+
+					
+	
+	
+
+	
+	
+	
+
+
+
+			
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		
+
+
+
+
+
+
+
+		
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1499 @@
+简单架构：
+	1：连接层
+	2：服务层
+	3：引擎层
+	4：存储层
+
+优化分析：
+	1：性能下降SQL慢，执行时间长，等待时间长
+		查询语句写的烂，
+		索引失效(单值，复合)
+		关联查询太多join(设计缺陷或不得已的需求)
+		服务器调优及各个参数设置(缓冲，线程数等)
+		......
+		
+	2：常见通用的Join查询
+		SLQ执行顺序：
+			手写：SELECT DISTINCT
+				<select_list>
+			         FROM
+				<left_table><join_type>
+				JOIN<right_table>ON<join_condition>
+			          WHERE
+				<where_condition>
+			           
+			          GROUP BY
+				<group_by_list>
+			           HAVING
+			 	<having_condition>
+			           ORDER by
+				<order_by_condition>
+			            LIMIT
+				<linit number>
+			机读：
+			       a:FROM<left_table>,b:ON<join_condition><join_type>JOIN<right_table>,c:WHERE<where_condition>,d:GROUP BY<GROUP_BY_LIST>,e:HAVING<having_condition>f:SELECT,g:DISTINCT<select_list>,h:ORDER BY<order_by_condition>,i:LIMIT<limit_number>
+			
+			总结：
+				SQL解析
+		
+		 各种 JOIN：INNER JOIN(内连接，取得结果是当前2个表的交际部分)
+			LEFT JOIN(左连接，左表为主)
+			RIGHT JOIN(右链接，右表为主)
+			FULL OUTER JOIN（全连接）
+			
+
+
+	3：索引简介
+		是什么：
+			MYSQL官方对索引的定义：索引(INDEX)是帮助Mysql高效获取数据的数据结构；可以得到索引的本质：索引是数据结构；
+			可以简单理解为‘排好序的快速查找数据结构’；
+				详解：在数据之外，数据库系统还维护者满足特定查找算法的数据结构，这些数据结构以某种方式引用(指向)数据，
+				这样就可以在这些数据结构上实现高级查找算法，这种数据结构，就是索引；
+				结论：数据本身之外，数据库还维护着一个满足特定算法的数据结构，这些数据结构以某种方式指向数据，
+				这样就可以在这些数据结构的基础上实现高级查找算法，这种数据结构就是索引；
+				一般来说索引本身也很大，不可能全部存储在内存中，因此往往以索引文件的形式存储在磁盘上；
+				我们平常所说的索引，如果没有特别指明，都是指B树(多路搜索树，并不一定是二叉的)结构组织的索引；其中聚集索引，次要索引，覆盖索引，复合索引，前缀索引，唯一索引默认都是使用B+Tree树索引，统称索引；当然，除了B+树这种；类型的索引之外，还有哈希索引等；
+				
+		
+		优势：
+			提高数据的检索效率，降低数据库的IO成本，
+			通过索引列队数据进行排序，降低数据排序的成本，降低了CPU的消耗，
+			
+		
+		劣势：实际上索引也是一张表，该表保存了主键与索引字段，并指向实体表的记录，所以索引列也是要占用空间的，
+		虽然索引大大提高了查询的速度，同时却会降低更新表的速度，如对表INSERT，UPDATE和DELETE；因为更新表时，Mysql不仅要保存数据，还要保存一下索引文件每次更新添加了索引列的字段，都会调整因为更新所带来的键值变化后的索引信息；
+		索引只是提高效率的一个因素，如果你的MYsql有大数据量的表，就需要花时间研究建立最优秀的索引，或优化查询
+		
+		mysql索引分类：
+			单值索引：即一个索引只包含当个列，一个表可以有多个单列索引；
+			唯一索引：索引列的值必须唯一，但允许有空值；
+			复合索引：即一个索引包含多个列
+			
+			基本语法：
+				创建：CREATE 【UNIQUE】INDEX indexNAme ON myTable(columnname(length))；
+				          ALTER mytable ADD 【UNIQUE】 INDEX 【indexNAMe】 ON（columnname(length)）
+				删除：DROP INDEX【indexName】 ON myTable；
+				查看：SHOW INDEX FROM table_name\G；
+				使用ALTER命令：
+
+		mysql索引结构：
+			BTree索引：
+				检索原理：
+			Hash索引，
+			full-text全文索引，
+			R-Tree索引
+		
+		那些情况需要创建索引：
+			主键自动建立唯一索引，
+			频繁作为查询条件的字段应该创建索引，
+			查询中与其他表关联的字段，外键关系建立索引，
+			频繁更新的字段不适合创建索引，
+			where条件里用不到的字段不创建索引，
+			单键/组合索引的选择问题，(在高并发下倾向创建组合索引)，
+			查询中排序的字段，排序字段若通过索引去访问将大大提高排序速度，
+			查询中统计或者分组字段，
+			
+		那些情况不需要创建索引：
+			表记录太少，
+			经常增删改的表，
+			数据重复且分布平均的表字段，因此应该只为最经常查询和最经常排序的数据列简历索引，
+			如果某个数据列包含许多重复的内容，为它建立索引就没有太大的实际效果；
+
+
+	4：性能分析：
+		Mysql Query Optimizer：
+			mysql自带的优化器；
+			
+		Mysql常见的性能瓶颈：
+			CPU：CPU在饱和的时候一般发生在数据装入内存或从磁盘上读取数据的时候；
+			IO：磁盘IO瓶颈发生在装入数据远大于内存容量的时候；
+			服务器硬件的性能瓶颈：top，free，iostat和vmstat来查看系统的性能状态
+		
+		Explain：
+			是什么：
+				简称查看执行计划，使用EXPLAIN关键字可以模拟优化器执行SQL查询语句，从而知道MySql是如何处理SQL语句；分析查询语句或是表结构的性能瓶颈；
+				官网介绍：		
+			
+			做什么：
+				表的读取顺序，						
+				数据读取操作的操作类型，
+				那些索引可以使用，
+				那些索引被实际使用，
+				表之间的引用，
+				每张表有多少行被优化器查询
+			使用：
+				Explain+SQL语句
+				执行计划包含的信息：id，select_type,table,type,pssible_keys,key,key_len,ref,rows,Extra
+			各个字段解释：
+				id：select查询的序列号，包含一组数字，表示查询中执行select字句或操作表的顺序
+				三种情况：
+					id相同，执行顺序由上至下；
+							
+					id不同，如果是子查询，id的序号会自增，id值越大越优先，越先被执行；
+					
+					id相同不同，同时存在；
+				select_type：
+					有哪些：
+					SIMPLE：简单的select查询，查询中不包含子查询或者UNION
+					PRIMARY：查询中若包含任何复杂的子部分，最外层被标记为
+					SUBQUERY：在SELECT或WHERE列表中包含子查询
+					DERIVED：在FROM在列表中包含的子查询被标记为DERIVED(衍生)，MySql会递归执行这些子查询，把结果放在临时表；
+					UNION：若第二个SLECT出现在UNION之后，则标记为UNION；若UNION包含在FROM字句的子查询中，外层SELECT将被标记为：DERIVED
+					UNION RESULT：从UNION表获取结果的SELECT					
+					
+					查询的类型，主要是用于区别
+					普通的查询，联合查询，子查询等的复杂查询
+				table：显示这一行数据是关于那张表的；
+				
+				type：
+					ALL：Full Table Scan，将遍历全表以找到匹配的行；
+						备注：一般来说，得保证查询至少达到range级别，最好能达到ref；
+						
+					index：Full Index Scan，index与All区别为index类型只遍历索引树；这通常比all快，因为索引文件通常比数据文件小；
+						(也就是说虽然all和Index都是读全表，但index是从索引中读取的，而all是从硬盘中读的)
+						
+					range：只检索给定范围的行，使用一个索引来选择行；key列显示使用了那个索引，一般就是在你的where语句中出现了between，<,>,in等的查询
+						这种范围索引扫描比全表扫描要好，因为它只需要开始于索引的某一点，而结束语另一点，不用扫描全部索引；
+						
+					ref：非唯一性索引扫描，返回匹配某个单独值的所有行，本质上也是一种索引访问，它返回所有匹配某个单独值的行，然而，
+						它可能会找到多个符合条件的行，所以他应该属于查找和扫描的混合体；
+						
+					eq_ref：唯一性索引扫描，对于每个索引键，表中只有一条记录与之匹配；常见于主键或唯一索引扫描；
+
+					const：表示通过索引一次就找到了，const用于比较primary或者unique索引；因为只匹配一行数据，所以很快；
+						如将主键置于where列表中，mysql就能将改查询转换为常量；
+
+					system：表只有一行记录(等于系统表)，这是const类型的特列。平时不会出现，可以忽略
+					NUll：
+												
+					从最好到最差依次是：
+						system>const>eq_ref>ref>range>index>ALL
+						一般来说，得保证查询至少达到range级别，最好能达到ref；
+								
+				possible_keys：
+					显示可能应用在这张表中的索引，一个或多个；
+					查询设计到的字段上若存在索引，则该索引将被列出，但不一定被查询实际使用；
+				key：
+					实际使用的索引；如果为NULL，则没有使用索引
+					查询中若使用了覆盖索引，则改索引寄出现在key列表中
+				
+				key_len：表示索引中使用的字节数，可通过该列计算查询中使用的索引的长度；在不损失精确性的情况下，长度越短越好；
+					key_len现实的值未索引字段的最大可能长度，并非实际使用长度，即key_len是根据表定义计算而得，不是通过表内检索出来的；								
+					
+				ref：显示索引的那一列被使用了，如果可能的话，是一个常数；那些列或常量被用于查找索引列上的值
+
+				rows：根据表统计信息及索引选用情况，大致估算出找到所需的记录所有要读取的行数；
+
+				Extra：
+					包含不适合在其他列中显示但十分重要的额外信息
+							Using filesort：
+								说明mysql会对数据使用一个外部的索引排序，而不是按照表内的索引顺序进行读取；
+								MySQL中无法利用索引完成的排序操作称为'文件排序'；		
+							
+							Using temporary：使用了临时表保存中间结果，MySQL在对查询结果排序时使用临时表；常见于排序order by和分组查询 group by；
+							
+							USING index：表示相应的select操作中使用了覆盖索引(Covering Index)，避免访问了表的数据行，效率不错；
+									如果同时出现using where，表明索引别用来执行索引键值的查找；
+									如果没有同时出现using where，表明索引用来读取数据而非执行查找动作；
+								覆盖索引：
+									一说未索引覆盖；
+									就是select的数据列只用从索引中就能够取得，不比读取数据行，MySQL可以利用索引返回select列表中的字段，而不比根据索引再次读取数据文件，换句话说，查询列要被所建的索引覆盖；
+									注意：如果要使用覆盖索引，一定要注意select列表中只取出需要的列，不可select *；
+										因为如果将所有字段一起做索引会导致索引文件过大，查询性能下降；
+
+							Using where：表明使用了wehre过滤
+
+							using join where：表明使用了连接缓存
+
+							impossible where：where字句的值总是false，不能用来获取任何元组
+
+							select tables optimized away：
+
+							distinct：
+								优化distinct操作，在找到第一匹配的元组后即停止找同样值的动作		
+												
+
+
+
+
+
+
+
+
+
+				
+				
+	5：索引优化 
+		索引分析：
+			左连接的情况下，通常索引加载右边一张表比较好
+			即左连接相反加，是由左连接特性决定的，左连接条件用于确定如何从右边表搜索行，左边一定都有；
+			右连接和左连接一样； 
+		尽可能减少Join语句中的NestedLoop的循环次数；永远用小结果集驱动大的结果集；
+		有限优化NestedLoop的内层循环；
+		保证Join语句中被驱动表上join条件字段已经被索引；
+		当无法保证被驱动表的Join条件字段被索引且内存资源充足的前提下，不要太吝惜JoinBuffer的设置；	
+
+		索引失效(应该避免)：
+			1：全职匹配
+				创建的索引按照位置全匹配
+
+			2：最佳左前缀法则
+				如果索引了多列，要遵守最左前缀法则；指的是查询从索引的最前列开始并且不跳过索引中的列；
+				
+	
+			3：不在索引列上做任何操作(计算，函数，(自动或者手动)类型转换)，会导致索引失效而转向全表
+				
+
+			4：存储引擎不能使用索引中范围条件右边的列
+				
+
+			5：计量使用覆盖索引(值访问索引的查询(索引列和查询列一直))，减少select *；
+					
+			
+			6：mysql在使用不等于(!=或者<>)的时候无法使用索引 会导致全表扫描；
+
+			7：is null，is not null 也无法使用索引；
+
+			8：like以通配符开头('%abc...')mysql索引失效会变成全表扫描的操作；
+				如何解决like'%字符串%'时索引不被使用的方法？？
+					使用覆盖索引(查询的字段要匹配索引(不能多于创建索引的字段))，业务中很难满足；
+				
+			9：字符串不加单引号索引失效；
+				
+			10：少用or，用它连接时会索引失效；
+
+			11：小总结：
+			
+
+			索引面试：
+				create index idx_数据库名称_索引名称 on表名(a,b,c,d)
+				explain select * from test where c1 = 'a1' and c2 = 'a2' and c4 > 'a4' and c3 = 'a3'
+				上述sql用到多少个索引？为什么是用到这些索引？
+				4个索引，mysql在执行SQL语句的时候底层有自己的优化 
+				
+				explain select * from test where c1 = 'a1' and c2 = 'a2' and c4 = 'c4' order by c3;
+				上述sql用到多少个索引？为什么是用到这些索引？
+				用到3个索引(实际上c3也用到了，只不过是用于排序而不是查找)
+				
+				explain select * from test where c1 = 'a1' and c2 = 'a2' order by c3;
+				3个索引，和上述相同
+				
+				explain select * from test where c1 = 'a1' and c5 = 'a5' order by c2，c3;
+				用到一个索引c1，c23用于排序，没有filesort				
+				
+				explain select * from test where c1 = 'a1' and c5 = 'a5' order by c3，c2;
+				用到一个索引c1，用到了filesort；				
+				
+				explain select * from test where c1 = 'a1' and c4 = 'a4' group by c2,c3;
+				用到1个索引
+				
+				explain select * from test where c1 = 'a1' and c4 = 'a4' group by c3,c2;
+				用到一个索引，Using temp  Using filesort
+				
+				定值，范还是排序，一般order by是给个范围；
+				group by基本上都需要进行排序，会有临时表产生
+			
+			一般性建议：
+				对于单键索引，尽量选择针对当前query过滤性更好的索引；
+				在选择组合索引的时候，当前query中过滤性最好的字段在索引字段顺序中，位置越靠前越好；
+				在选择组合缩印的时候，尽量选择可以能够包含当前query中的where字句中更多字段的索引；
+				尽可能偷偷拿过分析统计信息和调整quert的写法来达到选择合适索引的目的；
+
+			
+
+			查询截取分析：
+				查询优化：
+					用于小表驱动大表；
+						select * from A where id in （select id from B）
+						等价于：
+						for select id from B
+						for select * from A where A.id = B.id
+					当B表的数据集必须小于A表的数据集时，用in优于exists；
+					
+					select * from A where exists (select 1 from B where B.id = A.id)
+					该语法可以理解为：将朱查询的数据，放到子查询中做条件验证，根据验证结果(true或FALSE)来决定朱查询的数据结果是否得以保留；
+					提示：
+					EXISTS 只返回TRUE或FALSE，因此子查询中的select *也可以是select 1 或其他，官方说法是实际执行会忽略select清单，因此没有区别；
+					EXISTS子查询的实际执行过程可能经过了优化而不是我们理解上的卓条对比，如果担忧效率问题，可进行实际检验以确定具体问题具体分析；
+					EXISTS子查询往往一客一用条件表达式，其他子查询或者JOIN来替代，那种最有需要具体问题进行分析；
+
+					等价于：
+					for select * from A
+					for select * from B where B.id = A.id
+					当A表的数据集必须小于B表的数据集时，用exists由于in；
+					A表和B表的ID字段应简历索引；
+							
+					类似嵌套循环Nested Loop；
+						
+						
+					order by 关键字优化；
+						order by字句，尽量使用Index方式排序，避免使用FileSort方式排序
+							FileSort和Index，Index效率高；
+							order by 满足2种情况，会使用Index方式排序：
+								order by语句使用索引最左前列
+								使用Where字句与order by字句条件列组合满足索引的最左前列
+								尽可能在索引列上完成排序操作，遵照索引键的最佳左前缀；
+						如果不在索引列上，filesort有2种算法：
+						mysql就要启动双路排序和单路排序
+							双路排序：4.1之前是使用双路排序，字面意思就是2次扫描磁盘，最终得到数据，
+							读取行指针和orderby列，对他们进行排序，然后扫描已经排序号的列表，按照列表中的值重新从列表中
+							从磁盘去排序字段，在bffer进行排序，再从磁盘取其他字段；
+
+							取一批数据，要对磁盘进行了2次扫描，众所周知，I\O是很耗时的，所以在mysql4.1之后，出现了第二种改进的算法，
+							就是单路排序；
+
+							单路排序：从磁盘读取查询所需要的所有列，按照orderby列在buffer对他们进行排序，然后扫描排序后的列表进行输出，
+								他的效率更快一些，避免了第二次读取数据；并且把随机IO变成了顺序IO，但是他们会使用更多的空间，因为他把每一行都保存在内存中了；
+·							结论及引申出的问题：由于单路是后除的，总体而言好过双路 
+									在sort_buffer中，方法B比方法A要占用很多空间，因为方法B是吧所有的字段都取出，所以有可能取出的数据大小超出了sort_buffer的容量，
+									导致每次只能取sort_buffer容量大小的数据，进行排序(创建temp文件，多路合并)，排完再取取sort_buffer容量大小，再排...从而多次IO；
+							优化策略：增大sort_buffer_size参数的设置
+								增大max_length_for_sort_data参数的设置
+							
+							提高order by的速度：
+								1：order by时select * 是一个大忌只query需要的字段，这点非常重要；在这里影响的是
+									1.1：当query的字段大小总和小于max_length_for_sort_data 而且排序字段不是TEXT|BLOB类型时，会用改进后的算法--单路排序，否则用老算法--多路排序；
+									1.2：两种算法的数据都有可能超出sort_buffer的容量，超出之后，会创建tmp文件进行合并排序，导致多次IO，但是用单路排序算法的风险更大一些，所以需要提高sort_buffer_size；
+								2：尝试提高sort_buffer——size
+									不管用那种算法，提高这个参数都会提高效率，当然，要根据系统的能力去提高。因为这参数是针对每个进程的；
+								3：尝试提高max_length_for_sort_data
+									提高这个参数，会增加用改进算法的概率；但是如果设的太高，书库总容量超出sort_buffer_size的概率就会增大，明显症状是搞的磁盘IO活动和低的处理器使用率；
+							为排序使用索引：
+								Mysql2种排序方式：文件扫描和有序索引排序
+								MySql能为排序与查询使用相同的索引
+								
+								KEY a_b_c(abc)
+								order by能使用索引最左前缀
+									order by	a							
+									order by	a，b
+									order by	a，b，c												
+									order by	a desc，b desc，c desc
+								如果WHERE使用索引的最左前缀定义为常量，则order by能使用索引
+									where a = const order by b，c
+									where a = const and b = const  order by c
+									where a = const and b > const  order by b, c
+								不能使用索引进行排序
+									排序不一致；
+									丢失a索引
+									丢失中间的一个索引
+									使用了不是索引的部分
+									where a in（...）order by b，c；对于排序来说，多个相等条件也是范围查询
+							总结：
+
+
+
+
+
+
+
+
+
+					group by关键字优化：
+						group by实质是先排序后进行分组，遵照索引键的最佳左1前缀
+						当无法使用索引列，增大max_length_for_sort_data参数的设置+增大sort_buffer_size参数的设置
+						where高于having，能写在where限定的条件就不要去having限定了；				
+	
+				慢查询日志：
+					是什么？
+						MySql的慢查询日志是MySql提供的一种日志记录，它用来记录在MySql中响应时间超过阈值的语句，具体指运行时间
+						超过long_query_time值的SQL，则会被记录到慢查询日志中；
+						
+						具体指运行时间超过long_query_time值的SQL。则会被记录到慢查询日志中；long_query_time的默认值为10，意思是运行10秒以上的时间的语句；
+						
+						有他来插件那些SQL超出了我们的最大忍耐时间值，比如一条sqk执行超过5秒钟，我们就算慢sql，希望能收集超过5秒的sql，结合之前的explain进行全面分析；
+
+					怎么玩？
+						说明
+							默认情况下，NySql数据库没有开启慢查询日志，需要我们是手动设置这个参数；
+
+							当然，如果不是调优需要的话，一般不建议启动该参数，因为开启慢查询日志会或多或少 带来一定的性能影响，慢查询日志支持将日志记录写入文件
+					
+					查看是否开启一级如何开启：
+						默认：SHOW VARIABLES LIKE '%slow_query_log%'；					
+						开启：set global slow_query_log=1；(使用当前命令开启了慢查询日志只对当前数据库生效，如果MySql重启则会失效；如果要永久生效，就必须配置文件my.cnf
+							修改my.cnf文件，【mysqlid】下增加或修改参数
+							slow_query_log=1和slow_query_log_file=路径后，然后重启MySql服务器)
+						
+					那么开启了慢查询日之后，什么样的sql才会记录到慢查询日志里面呢？
+						参数long_query_time控制，默认是10秒，命令：SHOW VARIABLES LIKE '%long_query_time%'；
+						可是使用命令修改，也可以在my.cnf中修改；
+						假如运行时间正好等于long_query_time的情况，并不会被记录下来；也就是说，在mysql源码里是判断大于long_query_time，而非大于等于；
+					Case：
+						查看当前多少秒算慢：
+							SHOW VARIABLES LIKE '%slow_query_time%'；
+							
+						设置慢的阈值时间：
+							
+							set global long_query_time=3；
+							
+						为什么设置后看不出变化：
+							
+							需要重新连接或新开一个回话才能看到修改值；
+							
+						记录慢SQL并后续分析：
+
+						查询当前系统中有多少条慢查询记录：
+							show global status like '%%Slow_queries'；
+
+					配置版：
+						【mysqlId】下配置：
+							slow_query_log=1；
+							slow_query_log_file=路径；
+							long_query_time=3；
+							log_output=FILE；
+											
+					日志分析工具mysqlIdumpslow：
+						
+						查看mysqlIdumpslow的帮助信息：
+							s:是表示按照何种方式排序；
+							c:是访问次数；
+							I：锁定时间；
+							r:返回记录；
+							t:查询时间；
+							al:平均锁定时间；
+							ar：平均返回记录数；
+							at：平均查询时间；
+							t:即为返回前面多少条的数据；
+							g:后边搭配一个正则匹配模式，大小写不敏感的；
+							
+						工作中常用：
+							得到返回记录最多的10个sql
+								mysqlIdumpslow -s r -t 10 慢日志路径
+							得到返回次数最多的10个sql
+								mysqlIdumpslow -s c -t 10 -g "left join" 慢日志路径
+							得到按照时间排序的钱10条里面含有左连接的查询语句
+								mysqlIdumpslow -s t -t 10 -g "left join" 慢日志路径
+							另外建议在使用这些命令时结合 | 和more使用，否则会出现爆屏情况
+								mysqlIdumpslow -s t -t 10 -g "left join" 慢日志路径 | more
+				批量数据脚本：
+					设置参数log_bin_trust_function_creators
+						
+						创建函数，假如报错：This function has none of DETERMINISTIC......
+						由于我们开启了慢查询日志，因为我们开启了bin_log，我们就必须为我们的function指定参数；
+							show variables like 'log_bin_truet_function_creators';
+							set global log_bin_trust_function_creators=1
+
+						添加了参数以后，如果mysqlid重启，上述参数优惠小时，永久方法：
+							windows下my.ini【mysqlid】加上 log_bin_trust_function_creators=1；
+							linux下 /etc/my.cnf【mysqlId】加上 log_bin_trust_function_creators=1
+						
+					创建函数，保证每条数据都不同
+						
+						随机产生字符串：
+							DELIMITER $$
+							CREATE FUNCTION rand_string（n int）RETURNS VARCHAR(255)
+							BEGIN
+							 DECLARE chars_str VARCHAR(100) DEFAULT 'qwertyuiopasdfghjklzxcvbnmQAZWSXEDCRFVTGBYHNUJMIKOLP';
+							 DECLARE return_str VARCHAR(255) DEFAULT '';
+							 DECLARE i INT DEFAULT 0;
+							 while i < n DO
+							  set return_str = concat(retyrn_str,substring(chars_str,floor(1+Rand()*52),1));
+							  set i = i+1;
+							  return while;
+							  return return_str;
+							
+							 RETURN return_str;
+							END $$
+						随机传产生部门编号：
+
+							DELIMITER $$
+							create function rand_num()
+							returns int(5)
+							begin
+							declare i int default 0;
+							set i = floor(100+rand()*10);
+							return i;
+
+							END $$
+					创建存储过程：
+						创建往emp表中插入数据的存储过程：
+							DELIMITER $$
+							CREATE PROCEDURE insert_emp(in START int(10),in max_num(10))
+							BEGIN
+							DECLARE i int DEFAULT 0;
+							#set autocommit = 0 把autocommit设置成0；
+							SET autocommit = 0;
+							REPEAT
+							SET i = i+1;
+							insert into emp() values((start+i),rand_string(6),'salesman',0001,CURDDATE(),2000,400,rand_num());
+							UNTIL i = max_num;
+							END REPEAT;
+							COMMIT;
+							END $$
+						创建往dept表中插入数据的存储过程：
+							DELIMITER $$
+							CREATE PROCEDURE insert_dept(in START int(10),in max_num(10))
+							BEGIN
+							DECLARE i int DEFAULT 0;
+							#set autocommit = 0 把autocommit设置成0；
+							SET autocommit = 0;
+							REPEAT
+							SET i = i+1;
+							insert into dept() values((START+i),rand_string(10),rand_string(8));
+							UNTIL i = max_num;
+							END REPEAT;
+							COMMIT;
+							END $$						
+
+							
+					调用存储过程：
+						DELIMITER ;
+						call insert_dept(100,10);
+
+
+				Show Profile：
+					是什么：
+						是mysql提供可以用来分析当前回话中语句执行的资源消耗情况；可以用于sql的调优测量；
+					
+					默认情况下，参数处于关闭状态，并保存最近15次运行的结果；
+
+					分析步骤：
+						是否支持，看看当前版本的mysql版本是否支持：
+							
+						开启功能，默认是关闭，使用前需要开启：
+							show variables like 'profiling';
+							set profiling= on；
+						运行sql：
+
+						查看结果，show profile：
+
+						诊断sql，show profile cpu，block io for query 上一步前面的问题sql数字号码；
+
+						日常开发需要注意的结论：
+					
+							converting HEAP to MyISAM 查询结果太大，内存都不够用了往磁盘上搬了；
+							Creating tmp table 创建临时表：
+								拷贝数据到临时表；用完在删除
+							copying to tmp table on disk 把内存中临时表复制到磁盘，危险；
+							locked；
+
+
+				全局查询日志：
+					配置启用：
+						在mysql的my.cnf中，配置如下：
+							#开启：
+								general_log=1；
+							#记录日志文件的路径
+								general_log_file=路径
+							#输出格式
+								log_output=FILE
+						
+					编码启用：
+						命令：
+							set global general_log=1；
+							set global log_output=‘TABLE’
+						此后，你说编写的sql语句，将会记录到mysql库里的general_log表，可以用一下命令查看：
+							select * from mysql.general.log；
+
+					永远不要在生产环境开启这个功能；
+分析：
+1：观察，至少跑一天，看看生产的慢SQL情况；
+2：开启慢查询日志，设置阈值，比如超过5秒钟的就是慢SQL，并将它抓出来；
+3：explain+慢SQL分析
+4：show profile
+5：进行SQL数据可服务器的参数调优
+
+
+MySql锁机制：
+	表锁(偏读)：
+		特点：
+			偏向MyISAM引擎，开销小，枷锁快；无死锁；锁定粒度打，发生锁冲突的概率最高，并发度最低；		
+		案例分析：
+			手动增加表锁：
+				lock table 表名字 read(write),表名字2 read(write),其他；
+			为mylock表加read锁(读阻塞写例子)：
+			 session1：
+				获得表mylock的READ锁定，当前session可以查询该表记录，当前session不能查询其他没有锁定的表，当前session中插入或者更新锁定的表都会提示错误；
+			session2：其他session也可以查询该表的记录，其他session可以查询或者更新为锁定的表，其他session插入或者更新锁定表会一直等待获得锁；
+
+			为mylock表加write(MyISAM存储引擎的写阻塞读例子)
+			session1：获得表mylock的write锁定，当前session对锁定表的查询，更新，插入操作都可以执行，
+
+			session2：其他session对锁定表的查询被阻塞，需要等待锁被释放，
+		案例结论：
+			MyISAM在执行查询语句钱，会自动给设计的所有表加读锁，在执行增删改操作前，会自动给设计的表加写锁；
+			MySql的表级锁有2种模式：
+				表共享读锁
+				表独占写锁
+			读锁：兼容，读锁：是  写锁：否
+			写锁： 兼容，读锁：否  写锁：否
+			
+			结合上表，所以对MyISAM的表进行操作，会有以下情况：
+				对MyISAM表的度操作(加读锁)，不会阻塞其他进程对同一表读的请求，但会阻塞对同一表的写请求；只有当读锁释放后，才会执行其他进程的写操作；
+				对MyISAM表的写操作(加写锁)，会阻塞其他进程对同一表的读和写的操作，只有当写锁释放后，才会执行其他进程的读和写；
+
+		表锁分析：
+			如何分析表锁定：
+				通过检查table_locks_waited和table_locks_immediate状态变量来分析系统上的表锁定：
+					sql：show status like 'table%';
+				
+					table_locks_waited： 出现表级锁定争用而发生等待的次数(不能立即获取锁的次数，没等待一次锁值加1)，此值高则说明存在着较严重的表级锁争用的情况；
+						
+					able_locks_immediate：产生表级锁定的次数，表示可以立即获取锁的查询次数，每立即获取锁值加1；
+				此外，MyISAM的读写锁调度是写优先，这也是myisam不适合做写为主表的引擎；
+	行锁(偏写)：
+		特点：偏向InnoDB存储引擎，开销大，加锁慢；会出现死锁；锁定粒度最小，发生锁冲突的概率最低，并发读页最高；InnoDb与MyISAM的最大2点不同：	一是支持事务，而是支持行级锁；
+		
+		案例分析：
+			无索引行为升级为表锁：
+				
+			间隙锁危害：
+				什么是间隙锁：
+					当我们使用范围条件而不是相等条件检索数据，并请求共享或排它锁时，InnoDB会给符合条件的已有数据记录的索引项加锁；对于键值
+					在条件范围内单并不存在的记录，叫做间隙；InnoDb会对这个间隙加锁；
+				危害：
+					因为query执行过程中通过范围查找的话，他会锁定整个范围内所有的索引键值，及时这个键值并不存在；
+			如何锁定一行：
+				begin
+				select * from 表名  where id= 4 for update；
+		案例结论：
+			
+
+		行锁分析：
+			如何分析行锁定：
+				通过检查InnoDB——row——lock状态变量来分析系统上行锁的争夺情况；show status like 'immodb_row_lock%';
+			状态量说明：
+				Innodb_row_lock_current_waits：当前正在等待锁定的时间；
+				Innodb_row_lock_time：从系统启动到现在锁定总时间长度；
+				Innodb_row_lock_time_avg:每次等待所花平均时间；
+				Innodb_row_lock_time_max:从系统启动到现在等待最长的一次所花的时间；
+				Innodb_row_lock_waits:系统启动后到现在总共等待的次数；		
+		 优化建议：	
+
+
+	页锁：
+
+
+主从复制：
+	复制的基本原理：
+		slave会从master读取binlog来进行数据同步：
+			复制过程分为三步：
+				1：master将改变记录到二进制日志(binary log)；这些记录过程叫做二进制日志事件，binary log events；	
+				2：slave将master的binary log ecents 拷贝到他的中继日志(relay log)；
+				3：slave重做中继日志的事件，将改变应用到自己的数据库中；mysql复制是异步的且串行化；
+					
+
+	复制的基本原则：
+		每个slave只有一个master；
+		每个slave只能有一个唯一的服务器id；
+		每个master可以有多个slave；		
+
+	复制的最大问题：
+		延时
+	一主一从常见配置：
+		mysql版本一致且后台以服务运行；
+		主从配置在【mysqld】节点下，都是小写：
+			主机修改my.ini配置文件：
+				server_id=1；必须主服务器id唯一；
+				log-bin=自己本地的路径/mysqlbin；必须启用二进制文件；
+				log-err=自己本地的安装路径/mysqlerr；可选启用错误日志；
+				basedir=自己本地路径；可选根目录；
+				tmpdir=自己本地路径；可选临时目录；
+				datadir=自己本地的路径/data/；可选数据目录；
+				read-only=0；主机，读写都可以；
+				binlog-ignore-db=mysql；可选设置不要复制的数据库；
+				binlog-do-db=需要复制的主数据库的名字；可选设置需要复制的数据库；
+				
+			从机修改my.cnf配置文件：
+				必须从服务器唯一id；
+				启用二进制日志；
+
+			主机从机都关闭防火墙：
+				service iptables stop；
+			
+		在主机上建立账号并授权slave：
+			GRANT REPLICATION SLAVE ON *.* TO 'zhangfeng'@'从机数据库IP' IDENTIFIED by '123456'；
+			flush privileges；
+			
+			查询主机的状态：
+				show master status：
+				记录File和Position的值
+	
+			执行完此步骤后不再操作主服务器MYSQL，防止服务器状态值变化；				
+		在从机上配置需要复制的主机：
+			CHANGE MASTER To MASTER_HOST='主机IP',MASTER_USER='zhangfeng',MASTER_PASSWORD='123456',MASTER_LOG_FILE='File名字'，MATER_LOG_POS=Postion数字；
+			start slave：
+				启动从服务器复制功能
+			show slave status\G:
+				Slave_IO_Running:Yes
+				Slave_SQL_Running:Yes
+
+mysql常见函数：
+	单行函数：
+			
+		字符函数：
+			legth(获取参数值的字节个数)：
+				select LENGTH('');
+			concat(拼接字符串)：
+					select concat(last_name,"_",first_name) from 表名；
+			upper lower：
+				select upper（'zhangfeng'）：大写
+			substr substring：
+				索引从1开始
+				截取从指定索引处后面所有字符
+				select substr('张峰aaaa'，1) result；	
+				截取指索引处指定字符长度的字符
+				select substr('张峰aaa'，1,2) result；	
+				
+			instr：
+				返回子串第一次出现当前字符的索引，如果找不到返回0
+				select instr('张峰nnnnnn','n') result;	
+			trim：
+				去掉前后空格	
+				select trim('  zhangfeng  ') result;
+				去掉指定的前后子串
+				select trim('a' from 'aaaazhangaaaaafengaaaaa') result;
+			
+			lpad：
+				用指定的字符实现左填充指定长度，如果指定的长度小于原始字符从右边截断
+				select lpad('张峰asfdwesfe'，10，'*') result;			
+			rpad：
+				select rpad('张峰',12,'ab') result;
+	
+			replace:
+				替换匹配的字符串
+				select replace('zhangfengasdhgsfhs','hs','nm') result;		
+
+		数学函数：
+			round：四舍五入
+				select round（1.65）；
+				小数点后保留2位
+				select round(1.564,2);				
+			ceil：向上取整，返回该参数最小整数
+				select ceil(1.002)；
+			floor：向下取整，返回<=改参数的最大整数
+				select floor(-9.99);					
+			truncate:截断
+				select truncate（1.65,1）;
+			mod：取余
+				select mod(10,3);
+		日期函数：
+			now:返回当前系统日期+时间
+
+			curdate：返回当前系统日期，不包含时间
+
+			curtime：返回当前时间，不包含日期；
+
+			可以获取指定的 年 月 日 小时 分 秒；
+
+			str_to_date：将日期格式的字符转换成指定格式的日期
+				str_to_date('9-12-1999','%m-%d-%Y'):1999-09-13
+			date_format:将日期转换成字符
+				date_format('2018/6/6','%Y%m%d'):20180606
+			%Y:四位的年份
+			%y:2位的年份
+			%m:月份(01,02,...)
+			%c:月份(1,2...)
+			%d:日(01,02...)
+			%H:小时，24小时制
+			%h:小时，12小时制
+			%i:分钟(00,01...)
+			%s:秒，00,01...			
+
+		其他函数：
+			version：数据库版本号
+			
+		流程控制函数：
+			if：if else的效果
+				select if(10>2,'大'，'小')；
+			case：
+				使用一：switch case的效果
+					case 要判断的字段或表达式
+					when 常量1 then 要显示的值1或者语句1；
+					when 常量2 then 要显示的值2或者语句2；
+					...
+					else 要显示的值n或语句n；
+					end
+				使用二：类似于 多重if
+					case
+					when 条件1 then 要显示的值1或者 语句1；
+					when 条件2 then 要显示的值2或者 语句2；
+					...
+					else 要显示的值或者语句n；
+					end
+				
+								
+
+
+	分组函数：用作统计，又称为聚合函数或统计函数或组函数
+		sum：求和
+			select sum（salary）from 表；
+
+		avg：平均值
+
+		max：最大值
+
+		min：最小值
+
+		count：计算个数
+
+ 		参数支持哪些类型：
+			sum avg：
+				一般使用数值型
+			max min：
+				字符，数值 ，日期
+			count：
+				支持任何类型，计算非空(不为null)的个数
+		是否忽略 null：
+			sum avg：
+				sum中null不参与运算，avg中null页不参与运算
+			max min：
+				null不参与
+		可以和distinct搭配使用：
+				
+			select sum(distinct salary) from 表；
+		count 函数的单独说明：
+			count（字段）：
+
+			count（*）：
+
+			count（1）：相当于在表中夹了一列  统计1的个数					
+			
+			效率：
+				INNODB 存储引擎下，count（*）和count（1）效率差不多，比count（字段）要高一些
+				MYISAM存储引擎下，count（*）的效率高，因为myISAM引擎本身就存储了一个计数
+			和分组函数一同查询的字段有限制：
+				要求是group by后的字段
+	分组查询：
+		分组后的筛选：
+			select count（*），id
+			from	表
+			group by id
+			having count（*）>2；
+		特点：
+			分组查询中的筛选条件分为2类：
+				分组前的筛选：
+					使用原始表过滤，位置放在group by字句的前面，使用where
+				分组后的筛选：	
+					使用分组后的结果集，位置放在group by字句的后面 使用having
+			分组函数做条件肯定是放在having字句中；
+			
+			能用分组前筛选的，就优先使用分组前筛选；	
+				
+			group字句支持单个字段分组，多个字段分组(多个字段用逗号隔开没有顺序要求)，表达式和函数用的较少
+			
+			也可以添加排序(排序放在整个分组后面)
+	连接查询：
+		分类：
+			按年代分类：
+				sql92标准，仅仅支持内连接
+				sql99标准，推荐，支持 内连接+外链接(左外和右外)+交叉连接
+			按功能分类：
+				内连接：
+					等值连接：
+						select name1,name2 from 表1，表2
+						where 1.id = 2.id
+						
+						多表等值连接的结果为多表的交集部分
+						n表连接，至少需要n-1个连接条件
+						多表的顺序没有要求
+						一般需要为表起别名
+						可以搭配所有字句使用，比如排序，分组等等
+						 
+
+
+					非等值连接
+						
+							
+					自连接
+						
+				
+				内连接(sql99)：
+					等值：
+						select * from 表 inner join 表 on 等值条件；			
+					非等值：
+						select * from 表 inner join 表 on 字段 between 字段1 and 字段2；
+					自连接：
+						
+						select * from 表 inner join 表 on 条件表达式；
+		
+				外链接：外链接的查询结果为主表中的所有记录
+					如果从表中没有和他匹配的，则显示null
+					如果从表有和他匹配的，则显示匹配的值；
+
+
+					左外连接：
+						select * from 表 left join 表 on 条件表达式；				
+
+					右外连接
+						select * from 表 right join 表 on 条件表达式；													
+						
+					全外连接	：内连接的结果+表1中有但表2中没有的+表2中有但表二中没有的				
+						
+						
+				交叉连接：笛卡尔乘积
+					select* form 表 cross join 表；
+
+				sql92和sql99：
+					功能：
+						sql99支持的较多；
+					可读性：
+						sql99实现连接条件和筛选条件的分离，可读性较高；
+	子查询：
+		出现在其他语句中的select语句，称为字查询或内查询；
+		
+		 分类：
+			按子查询出现的位置：
+				select 后面：
+					仅仅支持标量子查询
+				from后面：
+					支持表子查询
+				where和having后面
+					支持标量子查询，列子查询，行子查询
+				exsits后面，相关子查询
+					支持表子查询
+			按结果集的行列数：
+				标量子查询，子查询只有一行一列
+				列子查询，结果集只有一列多行
+				行子查询，结果集一行多列
+				表子查询，结果集一般为多行多列
+
+
+			where或having后面：
+				单行子查询：
+					select * from表 where 字段 >(select * fron 表 where name=‘’)
+						
+	
+				多行子查询：
+					in not in：
+						等于列表中的任意一个
+					any some：
+						和子查询返回的某一个值比较
+					all：
+						和子查询返回的所有值比较
+					
+				行子查询：
+						
+										
+
+				特点：
+					子查询放在小括号内				
+					子查询一般放在条件的右侧
+					标量子查询，一般搭配着单行操作符使用
+					子查询在主查询之前执行		
+				非法使用标量子查询：
+					子查询中没有结果，子查询中结果不唯一						
+					列子查询，一一般搭配着多行操作符使用
+
+			select后面：
+				查询每个部门的员工个数：
+					select （select count（*）from 员工表 where 条件表达式) from 员工表				
+				仅仅支持标量子查询
+				
+			from后面：
+				
+			exists后面：
+				exists(完整的查询语句)
+				结果1或0
+	分页查询：
+		limit 其实索引(起始索引从0开始)，显示的条数；
+		
+		特点：
+			limit语句放在查询语句的最后
+			
+	联合查询：
+		union 合并：将多条查询语句的结果合并成一个结果
+		
+		select name from表1
+		where 条件
+		union
+		select name from 表2
+		where 条件；
+		
+		特点：
+			要求多条查询语句的查询列数是一致的；
+			默认是第一个查询语句的字段名；
+			要求多条查询语句的查询的每一列的类型和顺序最好一致；
+			默认去掉重项 不想去重使用union all；
+
+DML：
+	插入：
+		方式1：
+			insert into 表（列名.....）values（...）；
+			insert int 表 values（...）；
+
+		方式二：
+			insert into 表 set 列=值...；
+	比较：
+		方式一支持插入多行，方式二不支持；
+		方式一支持子查询，方式二不支持；（insert into 表（id，name））select 1，‘aaaa’；
+		
+	修改：
+		修改单表的记录：
+			
+		
+		修改多表的记录：
+			update 表1 ，表2 set 列=值，...
+			where 连接条件 and 筛选条件
+			
+			sql99：
+				update 表1
+				inner|left|right join表2
+				on 连接条件
+				set 列=值，...
+				where 筛选条件；		
+
+	删除：
+		单表的删除：
+
+		多表的删除：
+			sql*92：
+				delete 表1的别名，表2的别名
+				from 表1 别名，表2 别ming
+				where 连接条件
+				and 筛选条件			
+			sql99：
+				delete 表1的别名，表2的别名
+				from 表1 别名
+				inner|left|right join 表2 别名 on 连接条件
+				where 筛选条件；	
+			
+		方式一：delete
+		
+				
+			
+		方式二：truncate
+			truncate table 表名；
+			
+		比较：
+			delete可以加where条件，truncate不能加；
+			truncate删除 效率稍高；
+			假如要删除表中有自增长列，如果用delete删除后，在插入数据，自增长列从断点开始；
+			而truncate删除后，再插入数据，自增长列从1开始；
+			truncate删除没有返回值，delete有返回值；
+			truncate删除不能回滚，delete删除可以回滚；
+
+
+常见的数据类型：
+	数值型：
+		整型，小数(定点数，浮点数)
+	字符型：
+		较短的文本：char varchar
+		较长的文本：text，blob(较长的二进制数据)
+	日期型：
+
+	整型：
+		tinyint：
+			1个字节，有符号：-128-127；无符号：0-255
+		smallint：
+			2个字节，有符号：-32768-32767；无符号：0-65535
+		mediumint：
+			3个字节，有符号：-8388608-8388607；无符号：0-1677215
+		int integer：
+			4个字节，有符号：-2147483648-2147483647；无符号：0-4294967295；
+		bigint：
+			8个字节，有符号：
+		特点：
+			如果不设置无符号还是有符号，默认是有符号，如果想设置无符号，需要添加unsinged；
+			如果插入的数据超出了整型的范围，默认插入的是最大值或者最小值的临界值；
+			如果不设置长度，会有默认的长度；
+			长度的代表了显示的最大宽度，如果不够会用0在左边填充，但必须搭配zerofill使用；
+	小数：
+		定点型：
+			float（M,D）：
+				4个字节，
+			double（M,D）：
+				8个字节
+		浮点型：
+			DEC（M,D），DECIMAL（M,D）：
+				m+2个字节，最大取值范围与double相同。给定decimal的有效取值范围由M和D决定；
+
+		特点：
+			M和D，M整数部位+小数部位，D:小数部位，如果超过范围，则插入临界值；
+			M和D都可以省略，如果是decimal，则默认10,0；如果是float和double，则会随着插入数值的精度来决定精度；
+			定点的精确度较高，
+	字符：
+		
+	日期型：
+		date：
+			4个字节，最小值：1000-01-01，最大值：9999-12-31
+		datetime：
+			8个字节，最小值：1000-01-01 00:00:00，最大值：9999-12-31 23:59:59
+		timestamp：
+			4个字节，最小值：19700101080001 最大值：2038年的某个时刻
+		time：
+			3个字节，最小值：-838：59:59，最大值：838:59:59
+		year：	
+			1个字节，最小值：1901，最大值：2155
+
+
+
+	常见约束：
+		六大约束：
+			not null：非空，用于保证该字段的值不能为空
+			
+			default：默认，该字段有默认值；
+			
+			primary key：主键，用于保证该字段的值具有唯一性，并且非空；
+			
+			unique：唯一，用于保证该字段的值具有唯一性，可以为空；
+
+			 forgien key：外键，用于限制2个表的关系；用于保证该字段的值必须来自于主表的关联的值；
+		约束的添加分类：
+			列级约束
+				六大约束语法上都支持，但外键约束没有效果
+			表级约束
+				除了非空，默认 其他都支持
+
+
+		主键和唯一的对比：
+			
+			都可以保证唯一性，主键不允许为空，唯一允许，
+			主键在一个表中最多一个，唯一可以有多个；
+			主键和唯一都允许2个列组合
+			
+		外键：
+			要求在从表上设置外键关系
+			从表外键列的类型和主表的关联列的类型要求一致
+			主表的关联列必须是一个key(一般是主键，唯一)
+			插入数据时，先插入主表，在插入从表，
+			删除数据时，先删除从表，再删除主表
+
+	标识列：
+		又称为自增长列，可以不用收到插入，系统提供默认的序列值
+		可以设置增长的数，不能设置起始值；
+		
+		特点：
+			标识列不强制和主键使用，但是要求是一个key
+			一个表中只能有一个
+			标识列的类型只能是数值型
+			
+	TCL：
+		Transaction Control Language，事务控制语言
+		
+		事务的ACID属性：
+			原子性（Atomicity）：
+				原子性是指事务是一个不可分割的单位，事务中操作要么都发生，要么都不发生；
+
+			一致性(Consistency)：
+				事务必须是数据库从一个一致性状态变换到另外一个一致性状态
+			
+			隔离性（Isolation）：
+				事务的隔离性是指一个事务的执行不能被其他事务干扰，寄一个事务内部的操作
+				及使用的数据对并发的其他事务是隔离的，并发执行的各个事务之间不能相互干扰；
+			
+			持久性（Durability）：
+				是指一个事务一单被提交，他对数据库中数据的改变就是永久性的，接下来的其他操作和数据库故障不应该对其有任何影响；
+		事务的创建：
+			隐式的事务：
+				事务没有明显的开始或结束的标记
+				比如 insert update delete
+			
+			显示事务：
+				有明显的开始和结束标记			
+			
+			脏读：
+				对于2个事务T1，T2，T1读取了已经被T2更新但没有被提交的字段，之后，若T2回滚，T1读取的内容就是临时无效的；
+			
+			不可重复读：
+				对于2个事务T1，T2，T1读取了一个字段，然后T2更新了改字段，之后，T1再次读取同一个字段，值就不同了；
+
+			幻读：
+				对于2个事务T1，T2，T1从一个表中读取了一个字段，然后T2在该表中插入了一席新的行，如果T1再次读取同一个表，就会多出几行；
+
+		数据库的事务隔离级别：
+			READ UNCOMMITTED：
+				读未提交数据，允许事务读取未被其他事务提交的变更，脏读，不可重复读和幻读的问题都会出现；
+
+			READ COMMITED：
+				读已提交数据，只允许事务读取已经被其他事务提交的变更，可以避免脏读，但不可重复读和幻读问题任然可能出现；
+		
+			REPEATABLE READ：
+				可重复读，确保事务可以多次从一个字段中读取相同的值，在这个事务持续期间，禁止其他事务对这个字段进行更新，可以避免脏读和不可重复读，但幻读的问题任然存在；
+
+			SERIALIZABLE：
+				串行化，确保事务可以从一个表中读取相同的行，在这个事务持续期间，禁止其他事务对该表执行插入，更新和删除操作，所有并发的问题都可以避免，但性能十分低下；
+		ORCALE支持2中事务隔离级别：read commited；serializable；默认为read commited；
+
+		mysql都支持，，默认为repeatable read；
+
+
+视图：
+	虚拟表，和普通表一样使用，mysql5.1版本出现的新特性，是通过表动态生成的数据；只保存了sql逻辑，不保存查询结果；
+	
+	创建视图：
+		create view 视图名 as 查询语句；
+	
+	使用视图：
+		select * from 视图名+其他；
+	
+	优点：
+		重用sql语句，简化了复杂的sql操作，不比知道他的查询细节
+		保护数据，提高安全性，
+	视图修改：
+		方式一：
+			create or replace view 视图名 as 查询语句；
+		方式二：
+			alter view 视图名 as 查询语句；
+	删除视图：
+		drop view 视图名，视图名，....
+
+	查看视图：
+		desc 视图名；
+		show create view 视图名；
+
+	视图的更新：
+		插入：
+			insert into 视图名 values（）；
+		修改：
+			update 视图名 set 字段 = 值 where 条件；
+		删除：
+			delete from 视图名 where 条件；
+
+	具备以下特点的视图不允许更新：
+		包含以下关键字的sql语句：
+			分组函数，distinct group by ，having union union all；
+		常量视图
+		select中包含子查询
+		join
+		from一个不能更新的视图
+		where字句中的子查询引用了from字句中的表
+		
+	视图对比表：
+		创建关键字不同，视图不占用物理空间，表占用物理空间；
+
+变量：
+	系统变量：
+		全局变量
+		会话变量
+	自定义变量：
+		用户变量
+		局部变量
+	
+	系统变量：
+		变量由系统提供的，不是用户定义，属于服务器方面
+		
+		使用语法：
+			查看所有的系统变量：
+				show global(session) variables；
+ 		查看满足条件的部分系统变量：
+			show global | session variables like ‘%char%’；
+		查看指定的某个系统变量的值：
+			select @@global. | session.系统变量名；
+		为某个系统变量赋值：
+			set global | session 系统变量名 = 值；
+
+			set @@global. | session.系统变量名 = 值；
+		注意：如果是全局级别需要加global，如果是回话级别则需要加session。如果不写，默认是session；
+
+	自定义变量：
+		变量是用户定义的，不是系统提供的
+		
+		使用步骤：声明，赋值 使用
+		
+		用户变量：
+			作用域：
+				针对于当前回话(连接)有效
+			声明并初始化：
+				set @用户变量名 = 值；
+				set @用户变量名 := 值；
+				select @用户变量值 ：= 值；
+
+			赋值(更新用户变量的值)：
+				通过set或select：
+					set @用户变量名 = 值；
+					set @用户变量名 := 值；
+					select @用户变量值 ：= 值；
+				通过select into：
+					select 字段 into 变量名 from 表；
+		局部变量：
+			仅仅在定义他的begin end中有效
+			应用在 begin end中的第一句话	
+			
+			声明：
+				declare 变量名 类型
+				declare 变量名 类型 default 值；
+			赋值：
+				set 局部变量名 = 值；
+			使用：
+				select 局部变量名；	
+		对比用户变量和局部变量：
+			用户变量作用域当前会话，局部变量作用域begin end中；
+			用户变量定义和使用的位置在会话中的任何地方，局部变量只能在begin end中，且为第一句话；
+			声明的语法不同，用户变量必须加@符号，局部变量一般不用加@符号，需要奠定类型；
+	存储过程和函数：
+		
+		存储过程：
+			一组预先编译好的sql语句的集合，理解成批处理语句；
+			
+			创建：
+				create procedure 存储过程名（参数列表）
+				begin
+				存储过程体	
+				end
+				
+				注意：
+					参数列表包含三部分：
+						参数模式  参数名  参数类型
+					
+						参数模式：
+							
+							in：
+								改参数可以作为输入，也就是改参数需要调用方穿入职；
+							out：
+								该参数可以作为输出，也就是该参数可以作为返回值；
+							inout：
+								改参数既可以作为输入又可以作为输出，也就是该参数急需要穿入职，又可以返回值；
+						如果存储过程体仅仅只有一句话，begin end 可以省略；
+						
+						存储过程体重的每条sql语句的结尾都要加分号；
+						存储过程的结尾可以使用delimiter重新设置；
+
+
+			调用：				
+				call 存储过程名（实参列表）；
+		
+		函数：
+			和存储过程的区别：
+				存储过程可以有0个返回，也可以有多个返回；适合做批量的插入 更新；
+				函数有且仅有一个返回；适合做数据处理后返回一个结果；
+
+			创建：
+				create function 函数名（参数列表）returns 返回类型
+				begin
+				函数体
+				end
+			调用：
+				select 函数名（参数列表）			
+				
+			
+
+			注意：
+				参数列表包含2部分：参数名  参数类型；函数体肯定会有return语句，如果return没有放在函数体的最后也不报错，但不建议
+				函数体重仅有一句话，则可以省略begin end；
+			
+流程控制结构：
+	顺序结构：
+		程序由上往下依次执行；
+	分支结构：
+		程序可以从2条或多条路径中选择一条去执行；
+	循环结构：
+		程序在满足一定条件的基础上，重复执行一段代码；
+	
+
+	分支结构：
+		if函数：
+			实现简单的双分支
+			select if（表达式一，表达式二，表达式三）
+			执行顺序：
+				如果1成立，则返回2的值，否则返回3的值；
+		case结构：
+			一：
+				一般用于实现等值判断，类似于java中的switch语句；
+			二：
+				类似于java中的多重if语句，一般用于实现区间判断；
+			case 变量 | 表达式 | 字段
+			when 要判断的值 then 返回的值1 或语句1；
+			when 要判断的值 then 返回的值2 或语句2；
+			...
+			else 要返回的值N
+			end case；
+
+			case 
+			when 条件1 then返回的值1 或语句1；
+			....
+
+		特点：
+			可以作为表达式，嵌套在其他语句使用，可以放在任何地方；
+			可以作为独立语句去使用，只能放在begin end中；
+			
+			如果when中的值或者条件成立，则执行对应的then后面的语句，并且结束case；
+			如果都不满足，则执行else中的语句和值；
+
+			else可以省略，如果else省略了，所有的when不成立，则返回null；
+		
+		if结构：
+			实现多重分支
+			
+			if 条件1 then 执行的语句1；
+			elseif 条件2 then 语句2；
+			...
+			else 语句n【可以省略】
+			end if；
+			
+			只能应用在begin end中；
+			
+		
+	循环结构：
+		分类：
+			while loop repeat
+		循环控制：
+			iterate 类似于 continue，继续，结束本次循环，继续下一次；
+			leave  类似于break，跳出，结束当前所在的循环；
+
+		while：
+			【标签：】while 循环条件 do
+				循环体；
+			end while 【标签】；
+				
+			
+
+		loop：
+			【标签：】loop
+				循环体；
+			end loop 【标签】；
+
+		repeat：
+			【标签：】repeat
+				循环体；
+			until 结束循环的条件
+			end repeat 【标签】；
+
+
+		特点：
+			while 先判断后执行，repeat 先执行后判断， loop 没有条件的死循环；全部在 begin end中；
+		
+					
+			
+			
+
+
+
+
+
+
+
+		
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
